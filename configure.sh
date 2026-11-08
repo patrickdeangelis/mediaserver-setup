@@ -185,10 +185,14 @@ setup_languages() { # app langId-PT-BR recurso(movie|series)
   profiles=$(arr "$app" v3 "$key" GET /qualityprofile)
   # modelo de qualidade: HD-1080p de fábrica (ou um perfil nosso, se os de fábrica já foram removidos)
   base=$(jq -c '[.[] | select(.name=="HD-1080p" or .name=="Legendado (original)")] | sort_by(.name!="HD-1080p") | .[0]' <<<"$profiles")
-  profile() { # nome {formato:pontos} mínimo corte idioma-radarr
+  profile() { # nome {formato:pontos} mínimo corte idioma-radarr [resolução: 1080|2160]
     local body cur
-    body=$(jq -c --arg n "$1" --argjson sc "$2" --argjson min "$3" --argjson cut "$4" --argjson lg "$5" --argjson cfs "$cfs" '
-      del(.id) | .name=$n | .upgradeAllowed=true | .minFormatScore=$min | .cutoffFormatScore=$cut
+    body=$(jq -c --arg n "$1" --argjson sc "$2" --argjson min "$3" --argjson cut "$4" --argjson lg "$5" --argjson res "${6:-1080}" --argjson cfs "$cfs" '
+      del(.id) | .name=$n
+      | if $res==2160 then # 4K: só qualidades 2160p, corte no Bluray-2160p (Remux continua como upgrade)
+          .items |= map(.allowed = ((.name // .quality.name) | test("2160p")))
+          | .cutoff = ([.items[] | select((.name // .quality.name)=="Bluray-2160p") | (if .quality then .quality.id else .id end)][0])
+        else . end | .upgradeAllowed=true | .minFormatScore=$min | .cutoffFormatScore=$cut
       | .formatItems=[$cfs[] | {format:.id, name:.name, score:($sc[.name] // 0)}]
       | if has("language") then .language=$lg else . end' <<<"$base")
     cur=$(jq -c --arg n "$1" '.[] | select(.name==$n)' <<<"$profiles")
@@ -198,10 +202,14 @@ setup_languages() { # app langId-PT-BR recurso(movie|series)
   profile "Dual áudio (dublado + legendado)" '{"Dual áudio":200,"PT-BR (áudio)":-50,"PT-BR (nome)":-50}' -100 150 '{"id":-1,"name":"Any"}'
   profile "Legendado (original)" '{}' 0 0 '{"id":-2,"name":"Original"}'
   profile "Dublado (PT-BR)" '{"PT-BR (áudio)":100,"PT-BR (nome)":100}' 100 100 '{"id":-1,"name":"Any"}'
+  # Versões 4K (2160p) dos mesmos três perfis — acrescentadas, não substituem os de 1080p
+  profile "Dual áudio 4K (dublado + legendado)" '{"Dual áudio":200,"PT-BR (áudio)":-50,"PT-BR (nome)":-50}' -100 150 '{"id":-1,"name":"Any"}' 2160
+  profile "Legendado 4K (original)" '{}' 0 0 '{"id":-2,"name":"Original"}' 2160
+  profile "Dublado 4K (PT-BR)" '{"PT-BR (áudio)":100,"PT-BR (nome)":100}' 100 100 '{"id":-1,"name":"Any"}' 2160
   # remove perfis de fábrica que nada usa, para o pedido no Seerr mostrar só as três opções
   profiles=$(arr "$app" v3 "$key" GET /qualityprofile)
   if [ "$app" = radarr ]; then # coleções criadas junto com os filmes também prendem perfis
-    local dual; dual=$(jq '.[] | select(.name|startswith("Dual")) | .id' <<<"$profiles")
+    local dual; dual=$(jq '.[] | select(.name=="Dual áudio (dublado + legendado)") | .id' <<<"$profiles")
     arr radarr v3 "$key" GET /collection | jq -c --argjson s "$STOCK_PROFILES" --argjson p "$profiles" --argjson d "$dual" '
       .[] | select(.qualityProfileId as $q | [$p[] | select(.id==$q) | .name][0] as $n | $s | index($n)) | .qualityProfileId=$d' |
       while read -r c; do arr radarr v3 "$key" PUT "/collection/$(jq .id <<<"$c")" "$c" >/dev/null; done
@@ -211,7 +219,7 @@ setup_languages() { # app langId-PT-BR recurso(movie|series)
     arr "$app" v3 "$key" DELETE "/qualityprofile/$id" >/dev/null
   done
 }
-log "radarr/sonarr: perfis Dual áudio / Legendado / Dublado"
+log "radarr/sonarr: perfis Dual áudio / Legendado / Dublado (1080p e 4K)"
 setup_languages radarr 30 movie
 setup_languages sonarr 33 series
 

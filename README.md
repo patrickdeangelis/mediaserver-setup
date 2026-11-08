@@ -57,6 +57,10 @@ No Seerr, ao solicitar, abra **Opções avançadas → Perfil de qualidade**:
 | Legendado (original) | Só áudio original; o Bazarr baixa a legenda PT-BR |
 | Dublado (PT-BR) | Só áudio em português |
 
+Cada um tem uma versão **4K (2160p)**: **Dual áudio 4K (dublado + legendado)**, **Legendado 4K (original)** e **Dublado 4K (PT-BR)**
+(mesmas regras, só aceitam 2160p; corte no Bluray-2160p e Remux como upgrade). Escolha no mesmo campo do Seerr; o padrão continua sendo o Dual 1080p.
+Arquivos 4K são grandes (20-80 GB): confira o espaço em `DATA_DIR`.
+
 No Jellyfin, troque o áudio ou a legenda pelo ícone de balão durante o vídeo.
 
 ## Estrutura
