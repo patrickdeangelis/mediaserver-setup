@@ -24,3 +24,5 @@ Tudo em português do Brasil, sem senhas (uso doméstico), idempotente e com aut
 **`doctor.sh [--fix] [--quiet]`** (launchd `local.mediaserver.doctor`, a cada 600s e no login): liga OrbStack, sobe containers, corrige DNS se o IP Tailscale mudar, confere endereços, health dos apps e disco, notifica no macOS, log em `logs/doctor.log`.
 
 Ao final: rode `./doctor.sh` e mostre o resultado; liste o que ficou manual (Split DNS no Tailscale, port-forward 6881 opcional).
+
+**Windows:** Docker Desktop + WSL2. Rode `install.ps1` (ou, no WSL, `./install.sh`). Scripts usam `lib.sh` (`app_url` → `localhost:porta`, `sedi`); sem Bonjour/CoreDNS/Tailscale/launchd (o serviço `dns` fica no profile `tailscale`). Acesso em http://localhost.
