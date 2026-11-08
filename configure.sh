@@ -5,13 +5,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 set -a; source .env; set +a
+. ./lib.sh
 
 log() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 wait_http() { until curl -sf -o /dev/null "$1"; do sleep 2; done; }
 xml_key() { sed -n 's:.*<ApiKey>\(.*\)</ApiKey>.*:\1:p' "$CONFIG_DIR/$1/config.xml"; }
 
 # ---------------------------------------------------------------- qBittorrent
-QB=http://qbittorrent.local
+QB=$(app_url qbittorrent)
 QBJAR=$(mktemp)
 wait_http $QB
 qb() { curl -sf -b "$QBJAR" -H "Referer: $QB" "$@"; }
@@ -38,7 +39,7 @@ done
 rm -f "$QBJAR"
 
 # ---------------------------------------------------------------- Jellyfin
-JF=http://jellyfin.local
+JF=$(app_url jellyfin)
 JFAUTH='MediaBrowser Client="mediaserver-setup", Device="cli", DeviceId="mediaserver-setup", Version="1.0"'
 wait_http $JF/health
 jf() { curl -sf -H "Authorization: $JFAUTH${JFTOKEN:+, Token=\"$JFTOKEN\"}" -H 'Content-Type: application/json' "$@"; }
@@ -101,7 +102,7 @@ JF_KEY=$(jf $JF/Auth/Keys | jq -r '[.Items[] | select(.AppName=="Arr")][0].Acces
 
 # ---------------------------------------------------------------- *arr helpers
 arr() { # host versão chave método caminho [json]
-  curl -sf -X "$4" -H "X-Api-Key: $3" -H 'Content-Type: application/json' "http://$1.local/api/$2$5" ${6:+-d "$6"}
+  curl -sf -X "$4" -H "X-Api-Key: $3" -H 'Content-Type: application/json' "$(app_url "$1")/api/$2$5" ${6:+-d "$6"}
 }
 # Preenche .fields[] de um schema a partir de um objeto {nome: valor}
 FILL='.fields |= map(if $f[.name] != null then .value = $f[.name] else . end)'
@@ -127,7 +128,7 @@ arr_add() { # host versão chave recurso implementação nome camposJSON [jq ext
 setup_arr() { # host versão categoriaCampo categoria raiz renomearCampo
   local name=$1 ver=$2 catfield=$3 cat=$4 root=$5 renamefield=$6
   local key; key=$(xml_key "$name")
-  wait_http "http://$name.local/ping"
+  wait_http "$(app_url "$name")/ping"
   log "$name: sem login, pasta raiz, qBittorrent, Jellyfin, renomeação"
   arr_noauth "$name" "$ver" "$key"
 
@@ -221,7 +222,7 @@ if ! cmp -s prowlarr/torrent-indexer.yml "$DEF"; then
   mkdir -p "$(dirname "$DEF")"; cp prowlarr/torrent-indexer.yml "$DEF"
   docker restart prowlarr >/dev/null; sleep 3
 fi
-wait_http http://prowlarr.local/ping
+wait_http $(app_url prowlarr)/ping
 log "prowlarr: sem login, FlareSolverr, qBittorrent, indexadores, Sonarr/Radarr/Lidarr"
 arr_noauth prowlarr v1 "$PK"
 
@@ -276,7 +277,7 @@ for spec in "${INDEXERS[@]}"; do
         elif .name=="indexer" and $o != "" then .value=([.selectOptions[] | select(.name==$o)][0].value)
         else . end)' <<<"$SCHEMA")
   if err=$(curl -s -X POST -H "X-Api-Key: $PK" -H 'Content-Type: application/json' \
-      -d "$body" -w '\n%{http_code}' http://prowlarr.local/api/v1/indexer) && [ "$(tail -1 <<<"$err")" = 201 ]; then
+      -d "$body" -w '\n%{http_code}' $(app_url prowlarr)/api/v1/indexer) && [ "$(tail -1 <<<"$err")" = 201 ]; then
     echo "   + $name"
   else
     echo "   ! $name: não passou no teste ($(sed '$d' <<<"$err" | jq -r '.[0].errorMessage? // .message? // "erro"' 2>/dev/null | head -c 120))"
@@ -292,7 +293,7 @@ done
 arr prowlarr v1 "$PK" POST /command '{"name":"ApplicationIndexerSync"}' >/dev/null
 
 # ---------------------------------------------------------------- Bazarr
-BZ=http://bazarr.local
+BZ=$(app_url bazarr)
 BK=$(sed -n '/^auth:/,/^[a-z]/s/^  apikey: //p' "$CONFIG_DIR/bazarr/config/config.yaml")
 wait_http "$BZ/api/system/status?apikey=$BK"
 log "bazarr: Sonarr, Radarr, legendas pt-BR + en, provedores"
@@ -344,7 +345,7 @@ rm -f "$SJAR"
 # *.lan -> IP do Mac na tailnet (dns/Corefile). O Split DNS "lan" é cadastrado uma vez no painel do Tailscale.
 if command -v tailscale >/dev/null && ip=$(tailscale ip -4 2>/dev/null) && [ -n "$ip" ]; then
   if [ "$ip" != "${TS_IP:-}" ]; then
-    sed -i '' '/^TS_IP=/d' .env; echo "TS_IP=$ip" >>.env
+    sedi '/^TS_IP=/d' .env; echo "TS_IP=$ip" >>.env
     docker compose up -d --force-recreate dns >/dev/null 2>&1
   fi
   log "dns: *.lan -> $ip"

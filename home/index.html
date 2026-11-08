@@ -39,5 +39,13 @@
     document.getElementById('hint').textContent = 'Acessando por ' + h + ' — o endereço padrão é http://media.lan';
   }
 </script>
+<script>
+// Fora do .lan/.local (ex.: Windows, localhost ou IP), aponta cada link para host:porta.
+(function(){var h=location.hostname;if(/\.(lan|local)$/.test(h)&&h!=='media.local'&&h!=='media.lan')return;
+if(/\.(lan|local)$/.test(h))return;
+var P={jellyfin:8096,seerr:5055,sonarr:8989,radarr:7878,lidarr:8686,bazarr:6767,prowlarr:9696,qbittorrent:8085};
+document.querySelectorAll('a[href]').forEach(function(a){var m=a.getAttribute('href').match(/^http:\/\/([a-z]+)\.lan/);
+if(m&&P[m[1]])a.href='http://'+h+':'+P[m[1]]+'/';});})();
+</script>
 </body>
 </html>

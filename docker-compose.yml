@@ -221,6 +221,7 @@ services:
   dns:
     image: coredns/coredns:latest
     container_name: media-dns
+    profiles: [tailscale] # só macOS/Linux com Tailscale (COMPOSE_PROFILES=tailscale no .env)
     restart: unless-stopped
     command: -conf /etc/coredns/Corefile
     environment:

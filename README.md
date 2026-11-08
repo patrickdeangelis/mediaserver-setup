@@ -96,3 +96,15 @@ docker compose pull && docker compose up -d   # atualiza
 - qBittorrent aparece como "firewalled": o roteador não encaminha a porta 6881. Funciona do mesmo jeito; encaminhar a porta aumenta a velocidade.
 - O Jellyfin 12 exige senha para administrador. Existe um usuário `admin` oculto, com a senha em `JELLYFIN_ADMIN_PASS` no `.env`,
   usado só pelo script. No dia a dia, use `patrick`.
+
+## Windows (Docker Desktop + WSL2)
+
+```powershell
+irm https://raw.githubusercontent.com/patrickdeangelis/mediaserver-setup/main/install.ps1 | iex
+```
+
+Requisitos: Windows 10/11 com WSL2 (`wsl --install`) e Docker Desktop (o script instala via winget; ative a integração WSL em Settings → Resources).
+O projeto fica em `~/mediaserver` dentro do WSL (rápido e com hardlinks). Acesso: http://localhost (página inicial) ou `localhost:porta` (Jellyfin 8096, Pedidos 5055, Sonarr 8989, Radarr 7878, Lidarr 8686, Bazarr 6767, Prowlarr 9696, qBittorrent 8085).
+Diferenças do macOS: sem nomes `.local`/`.lan` (Bonjour, CoreDNS e Tailscale são opcionais e só do macOS) e sem launchd; o Docker Desktop religa os containers
+(marque "Start Docker Desktop when you sign in"). Para outros aparelhos da rede use `http://<IP do PC>:porta` e libere as portas no firewall do Windows.
+Para guardar a mídia em outro disco, ajuste `DATA_DIR` no `.env` (ex.: `/mnt/d/data`; hardlinks exigem torrents/ e media/ no mesmo disco).
