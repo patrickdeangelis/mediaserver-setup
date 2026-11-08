@@ -1,0 +1,13 @@
+# DNS da tailnet: qualquer nome *.lan aponta para o Mac no Tailscale.
+# Cadastrado no Tailscale como Split DNS (nameserver = IP do Mac, restrito ao domínio "lan").
+# O IP vem do .env (TS_IP), atualizado pelo configure.sh.
+lan:53 {
+	template IN A lan {
+		answer "{{ .Name }} 60 IN A {$TS_IP}"
+	}
+	# Sem IPv6: o Docker não recebe conexões pelo IPv6 do Tailscale
+	template IN AAAA lan {
+		rcode NOERROR
+	}
+	errors
+}

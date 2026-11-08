@@ -1,0 +1,245 @@
+# Media server: Prowlarr -> Sonarr/Radarr/Lidarr/Bazarr -> qBittorrent -> Jellyfin
+# Todos montam o mesmo /data para permitir hardlinks (torrents/ e media/ no mesmo volume).
+# Acesso pelos domínios *.local: o Mac anuncia os nomes na rede via Bonjour (mdns-publish.sh) e o
+# Caddy (porta 80, ver Caddyfile) encaminha cada nome para o app — igual no Mac e nos outros aparelhos.
+# Também dá para acessar por IP:porta (rede local ou Tailscale). Sem senhas: uso doméstico.
+#
+# Persistência: todo estado fica em pastas do disco (./config e ./data), nunca dentro do container.
+# Autocura: cada serviço tem healthcheck; o "autoheal" reinicia quem ficar unhealthy e o
+# restart policy religa quem cair. O doctor.sh (launchd) cuida do OrbStack e do resto.
+
+x-common: &common
+  restart: unless-stopped
+  environment: &env
+    PUID: ${PUID}
+    PGID: ${PGID}
+    TZ: ${TZ}
+
+x-health: &health
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 90s
+
+services:
+  jellyfin:
+    <<: *common
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    labels:
+      autoheal: "true"
+    ports: # rede local e Tailscale (acesso direto por IP:porta)
+      - 8096:8096
+      - 7359:7359/udp # descoberta automática pelos apps do Jellyfin
+    volumes:
+      - ${CONFIG_DIR}/jellyfin:/config
+      - ${DATA_DIR}/media:/data/media
+    healthcheck:
+      <<: *health
+      test: curl -fsS -o /dev/null http://localhost:8096/health
+
+  qbittorrent:
+    <<: *common
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    labels:
+      autoheal: "true"
+    environment:
+      <<: *env
+      WEBUI_PORT: 8085
+      TORRENTING_PORT: 6881
+    volumes:
+      - ${CONFIG_DIR}/qbittorrent:/config
+      - ${DATA_DIR}:/data
+    ports: # 6881 = peers BitTorrent; 8085 = interface web
+      - 6881:6881
+      - 8085:8085
+      - 6881:6881/udp
+    healthcheck:
+      <<: *health
+      test: curl -fsS -o /dev/null http://localhost:8085/api/v2/app/version
+
+  prowlarr:
+    <<: *common
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    labels:
+      autoheal: "true"
+    ports: # rede local e Tailscale (acesso direto por IP:porta)
+      - 9696:9696
+    volumes:
+      - ${CONFIG_DIR}/prowlarr:/config
+    healthcheck:
+      <<: *health
+      test: curl -fsS -o /dev/null http://localhost:9696/ping
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    labels:
+      autoheal: "true"
+    environment:
+      TZ: ${TZ}
+      LOG_LEVEL: info
+    healthcheck:
+      <<: *health
+      test: curl -fsS -o /dev/null http://localhost:8191/health
+
+  # Indexa sites brasileiros (BLUDV, Comando, Torrent dos Filmes...) — github.com/felipemarinho97/torrent-indexer
+  torrent-indexer:
+    image: felipemarinho97/torrent-indexer:latest
+    container_name: torrent-indexer
+    restart: unless-stopped
+    labels:
+      autoheal: "true"
+    environment:
+      LOG_LEVEL: 1
+      REDIS_HOST: redis
+      FLARESOLVERR_ADDRESS: http://flaresolverr:8191
+      SHORT_LIVED_CACHE_EXPIRATION: 30m
+      LONG_LIVED_CACHE_EXPIRATION: 7d
+    depends_on:
+      redis:
+        condition: service_healthy
+      flaresolverr:
+        condition: service_healthy
+    healthcheck:
+      <<: *health
+      test: wget -q -O /dev/null http://localhost:7006/
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: unless-stopped
+    labels:
+      autoheal: "true"
+    command: redis-server --save 300 1 --appendonly no
+    volumes:
+      - ${CONFIG_DIR}/redis:/data
+    healthcheck:
+      <<: *health
+      test: redis-cli ping | grep -q PONG
+
+  sonarr:
+    <<: *common
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    labels:
+      autoheal: "true"
+    ports: # rede local e Tailscale (acesso direto por IP:porta)
+      - 8989:8989
+    volumes:
+      - ${CONFIG_DIR}/sonarr:/config
+      - ${DATA_DIR}:/data
+    healthcheck:
+      <<: *health
+      test: curl -fsS -o /dev/null http://localhost:8989/ping
+
+  radarr:
+    <<: *common
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    labels:
+      autoheal: "true"
+    ports: # rede local e Tailscale (acesso direto por IP:porta)
+      - 7878:7878
+    volumes:
+      - ${CONFIG_DIR}/radarr:/config
+      - ${DATA_DIR}:/data
+    healthcheck:
+      <<: *health
+      test: curl -fsS -o /dev/null http://localhost:7878/ping
+
+  lidarr:
+    <<: *common
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    labels:
+      autoheal: "true"
+    ports: # rede local e Tailscale (acesso direto por IP:porta)
+      - 8686:8686
+    volumes:
+      - ${CONFIG_DIR}/lidarr:/config
+      - ${DATA_DIR}:/data
+    healthcheck:
+      <<: *health
+      test: curl -fsS -o /dev/null http://localhost:8686/ping
+
+  bazarr:
+    <<: *common
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    labels:
+      autoheal: "true"
+    ports: # rede local e Tailscale (acesso direto por IP:porta)
+      - 6767:6767
+    volumes:
+      - ${CONFIG_DIR}/bazarr:/config
+      - ${DATA_DIR}/media:/data/media
+    healthcheck:
+      <<: *health
+      test: curl -fsS -o /dev/null http://localhost:6767/api/system/ping
+
+  # Pedidos de filmes/séries estilo Netflix (Seerr, sucessor do Jellyseerr) -> Radarr/Sonarr
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
+    restart: unless-stopped
+    labels:
+      autoheal: "true"
+    environment:
+      TZ: ${TZ}
+      LOG_LEVEL: info
+    volumes:
+      - ${CONFIG_DIR}/seerr:/app/config
+    ports: # rede local e Tailscale (acesso direto por IP:porta)
+      - 5055:5055
+    healthcheck:
+      <<: *health
+      test: wget -q -O /dev/null http://localhost:5055/api/v1/status
+
+  # Página inicial (http://media.local) + proxy da rede local na porta 80 (ver Caddyfile)
+  home:
+    image: caddy:alpine
+    container_name: media-home
+    restart: unless-stopped
+    labels:
+      autoheal: "true"
+    ports:
+      - 80:80
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./home:/srv:ro
+      - ${CONFIG_DIR}/caddy:/data
+    healthcheck:
+      <<: *health
+      test: wget -q -O /dev/null http://localhost/
+
+  # DNS para a tailnet: *.lan -> Mac no Tailscale (Split DNS no painel do Tailscale, ver README)
+  dns:
+    image: coredns/coredns:latest
+    container_name: media-dns
+    restart: unless-stopped
+    command: -conf /etc/coredns/Corefile
+    environment:
+      TS_IP: ${TS_IP}
+    volumes:
+      - ./dns/Corefile:/etc/coredns/Corefile:ro
+    ports:
+      - 53:53/udp
+      - 53:53/tcp
+
+  # Reinicia automaticamente qualquer container com label autoheal=true que fique "unhealthy"
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_START_PERIOD: 120
+      TZ: ${TZ}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

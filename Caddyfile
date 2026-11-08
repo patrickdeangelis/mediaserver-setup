@@ -1,0 +1,38 @@
+# Proxy: cada nome cai no app certo.
+#   .local = rede de casa (anunciado pelo Mac via Bonjour, mdns-publish.sh)
+#   .lan   = qualquer lugar pelo Tailscale (DNS em dns/Corefile)
+{
+	auto_https off
+	admin off
+}
+
+http://jellyfin.local, http://jellyfin.lan {
+	reverse_proxy jellyfin:8096
+}
+http://sonarr.local, http://sonarr.lan {
+	reverse_proxy sonarr:8989
+}
+http://radarr.local, http://radarr.lan {
+	reverse_proxy radarr:7878
+}
+http://lidarr.local, http://lidarr.lan {
+	reverse_proxy lidarr:8686
+}
+http://bazarr.local, http://bazarr.lan {
+	reverse_proxy bazarr:6767
+}
+http://prowlarr.local, http://prowlarr.lan {
+	reverse_proxy prowlarr:9696
+}
+http://qbittorrent.local, http://qbittorrent.lan {
+	reverse_proxy qbittorrent:8085
+}
+http://seerr.local, http://seerr.lan {
+	reverse_proxy seerr:5055
+}
+
+# media.local, media.lan, IP do Mac ou nome do Tailscale: página inicial
+:80 {
+	root * /srv
+	file_server
+}
